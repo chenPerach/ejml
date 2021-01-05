@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, Peter Abeles. All Rights Reserved.
+ * Copyright (c) 2021, Peter Abeles. All Rights Reserved.
  *
  * This file is part of Efficient Java Matrix Library (EJML).
  *
@@ -70,7 +70,7 @@ public class RuntimeRegressionMasterApp {
             var measure = new RunAllBenchmarksApp();
             measure.resultsDirectory = resultsPath;
             measure.timeoutMin = timeoutMin;
-            measure.benchmarkNames = benchmarkNames;
+            measure.userBenchmarkNames = benchmarkNames;
             measure.process();
             outputDirectory = measure.outputDirectory;
         }

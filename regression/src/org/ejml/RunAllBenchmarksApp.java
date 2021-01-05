@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, Peter Abeles. All Rights Reserved.
+ * Copyright (c) 2021, Peter Abeles. All Rights Reserved.
  *
  * This file is part of Efficient Java Matrix Library (EJML).
  *
@@ -29,6 +29,7 @@ import org.openjdk.jmh.runner.options.TimeValue;
 import java.io.*;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
@@ -52,7 +53,13 @@ public class RunAllBenchmarksApp {
     public long timeoutMin = DEFAULT_TIMEOUT_MIN;
 
     /** Manually specify which benchmarks to run based on class name */
-    public List<String> benchmarkNames = new ArrayList<>();
+    public List<String> userBenchmarkNames = new ArrayList<>();
+
+    /**
+     * The order in which benchmarks are run is randomized. This is intended to reduce systematic bias. E.g.
+     * If a heavy task is run first it could heat up the computer causing it to throttle.
+     */
+    public boolean randomizedOrder = true;
 
     String[] blackListPackages = new String[]{"ejml-experimental"};
 
@@ -98,14 +105,19 @@ public class RunAllBenchmarksApp {
             }
 
             // Run benchmarks by finding automatically or by manually specifying them
-            if (benchmarkNames.isEmpty()) {
-                findBenchmarksByModule(pathToMain);
+            List<String> benchmarkNames = new ArrayList<>();
+            if (userBenchmarkNames.isEmpty()) {
+                findBenchmarksByModule(pathToMain, benchmarkNames);
             } else {
-                for (String benchmarkName : benchmarkNames) {
-                    runBenchmark(benchmarkName);
-                }
+                benchmarkNames.addAll(userBenchmarkNames);
             }
-
+            // Randomize the order to reduce systematic bias if requested
+            if (randomizedOrder) {
+                Collections.shuffle(benchmarkNames);
+            }
+            for (String benchmarkName : benchmarkNames) {
+                runBenchmark(benchmarkName);
+            }
             // Print out the total time the benchmark took
             long time1 = System.currentTimeMillis();
             long totalTimeMS = time1 - time0;
@@ -130,7 +142,7 @@ public class RunAllBenchmarksApp {
     /**
      * Recursively searches each module by file path to find benchmarks then runs them
      */
-    private void findBenchmarksByModule( String pathToMain ) {
+    private void findBenchmarksByModule( String pathToMain, List<String> benchmarkNames ) {
         File[] moduleDirectories = new File(pathToMain).listFiles();
         Objects.requireNonNull(moduleDirectories);
 
@@ -152,14 +164,14 @@ public class RunAllBenchmarksApp {
             if (!dirBenchmarks.exists())
                 continue;
 
-            recursiveRunBenchmarks(dirBenchmarks, dirBenchmarks);
+            recursiveFindBenchmarks(dirBenchmarks, dirBenchmarks, benchmarkNames);
         }
     }
 
     /**
      * Looks for benchmarks inside of this directory then checks all the children
      */
-    public void recursiveRunBenchmarks( File root, File directory ) {
+    public void recursiveFindBenchmarks( File root, File directory, List<String> benchmarkNames ) {
         File[] children = directory.listFiles();
         if (children == null)
             return;
@@ -180,14 +192,14 @@ public class RunAllBenchmarksApp {
                 continue;
             }
 
-            runBenchmark(c.getName());
+            benchmarkNames.add(c.getName());
         }
 
         // Depth first search through directories
         for (File f : children) {
             if (!f.isDirectory())
                 continue;
-            recursiveRunBenchmarks(root, f);
+            recursiveFindBenchmarks(root, f, benchmarkNames);
         }
     }
 
@@ -202,10 +214,9 @@ public class RunAllBenchmarksApp {
         long time0 = System.currentTimeMillis();
         Options opt = new OptionsBuilder()
                 .include(benchmarkName)
-                // Do average and throughput to handle very very fast and very slow functions
+                // Using average since it seems to have less loss of precision across a range of speeds
                 .mode(Mode.AverageTime)
-//                .mode(Mode.Throughput)
-//                .timeUnit(TimeUnit.SECONDS)
+                // Using nanoseconds since it seems to have less loss of precision for very fast and slow operations
                 .timeUnit(TimeUnit.NANOSECONDS)
                 // The number of times the benchmark is run  is basically at the bare minimum to speed everything up.
                 // Otherwise it would take an excessive amount of time
