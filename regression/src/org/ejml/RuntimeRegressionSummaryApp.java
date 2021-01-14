@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, Peter Abeles. All Rights Reserved.
+ * Copyright (c) 2021, Peter Abeles. All Rights Reserved.
  *
  * This file is part of Efficient Java Matrix Library (EJML).
  *
@@ -21,9 +21,6 @@ package org.ejml;
 import lombok.Getter;
 import org.ejml.data.DGrowArray;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
 import java.util.*;
 
 import static org.ejml.RuntimeRegressionMasterApp.formatDate;
@@ -34,13 +31,7 @@ import static org.ejml.RuntimeRegressionMasterApp.formatDate;
  * @author Peter Abeles
  */
 public class RuntimeRegressionSummaryApp {
-    /** Stores the baseline results that are expected */
-    public String baselineDirectory = "runtime_regression/baseline";
-
-    /** Stores results from the most recent run that is being tested */
-    public String currentDirectory = "runtime_regression/current";
-
-    /** How long it took to process in milliseconds */
+    /** Input: How long it took to process in milliseconds */
     public double processingTimeMS = 0.0;
 
     /** Tolerance used to decide if the difference in results are significant */
@@ -65,32 +56,23 @@ public class RuntimeRegressionSummaryApp {
     /**
      * Processes the two sets of results and identifies parsing exception and significant differences
      */
-    public void process() {
+    public void process(Map<String, Double> current, Map<String, Double> baseline) {
         countBenchmarks = 0;
         countFiles = 0;
         flagged.clear();
         exceptions.clear();
         allErrors.reset();
 
-        Set<String> setBaseline = loadResultsSet(baselineDirectory);
-        Set<String> setCurrent = loadResultsSet(currentDirectory);
-
         // If it's known they are identical later on we can skip a check
-        boolean identicalSets = setBaseline.size() == setCurrent.size();
+        boolean identicalSets = baseline.size() == current.size();
 
         // Go through each benchmark and compare the results
-        for (String benchmarkName : setBaseline) {
-            if (!setCurrent.contains(benchmarkName)) {
+        for (String benchmarkName : baseline.keySet()) {
+            if (!current.containsKey(benchmarkName)) {
                 identicalSets = false;
                 exceptions.add("Not in current: " + benchmarkName);
                 continue;
             }
-
-            if (!parse(parseBaseline, new File(baselineDirectory, benchmarkName)))
-                continue;
-
-            if (!parse(parseCurrent, new File(currentDirectory, benchmarkName)))
-                continue;
 
             countFiles++;
             compareBenchmark(benchmarkName);
@@ -99,8 +81,8 @@ public class RuntimeRegressionSummaryApp {
         if (identicalSets)
             return;
 
-        for (String benchmarkName : setCurrent) {
-            if (!setBaseline.contains(benchmarkName))
+        for (String benchmarkName : current.keySet()) {
+            if (!baseline.containsKey(benchmarkName))
                 exceptions.add("Not in baseline: " + benchmarkName);
         }
     }
@@ -155,34 +137,6 @@ public class RuntimeRegressionSummaryApp {
         return summary;
     }
 
-    private boolean parse( ParseBenchmarkCsv parser, File path ) {
-        try {
-            parser.parse(new FileInputStream(path));
-            return true;
-        } catch (IOException e) {
-            exceptions.add("IOException reading " + path.getPath() + " : " + e.getMessage());
-        }
-        return false;
-    }
-
-    public Set<String> loadResultsSet( String pathToDirectory ) {
-        Set<String> set = new HashSet<>();
-
-        File file = new File(pathToDirectory);
-        File[] children = file.listFiles();
-        if (children == null)
-            return set;
-
-        for (int i = 0; i < children.length; i++) {
-            File f = children[i];
-            if (!f.isFile() || !f.getName().endsWith(".csv"))
-                continue;
-            set.add(f.getName());
-        }
-
-        return set;
-    }
-
     /**
      * Compares results and looks for significant differences to flag
      */
@@ -222,13 +176,5 @@ public class RuntimeRegressionSummaryApp {
         }
         if (!identical)
             exceptions.add("Not identical: " + benchmarkName);
-    }
-
-    public static void main( String[] args ) {
-        var app = new RuntimeRegressionSummaryApp();
-        app.baselineDirectory = "runtime_regression/baseline";
-        app.currentDirectory = "runtime_regression/current";
-        app.process();
-        System.out.println(app.createSummary());
     }
 }

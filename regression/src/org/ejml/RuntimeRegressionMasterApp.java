@@ -28,9 +28,7 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
+import java.util.*;
 
 /**
  * Master application which calls all the other processes. It will run the regression, compare results, compute the
@@ -55,8 +53,11 @@ public class RuntimeRegressionMasterApp {
             usage = "Used to specify a subset of benchmarks to run. Default is to run them all.")
     List<String> benchmarkNames = new ArrayList<>();
 
+    /** Tolerance used to decide if the difference in results are significant */
+    public double significantFractionTol = 0.4;
+
     public void performRegression() {
-        long time0 = System.currentTimeMillis();
+        long startTime = System.currentTimeMillis();
         resultsPath = GenerateCode32.projectRelativePath(resultsPath);
         emailPath = GenerateCode32.projectRelativePath(emailPath);
         var email = new EmailResults();
@@ -68,7 +69,7 @@ public class RuntimeRegressionMasterApp {
             outputDirectory = selectMostRecentResults();
         } else {
             var measure = new RunAllBenchmarksApp();
-            measure.resultsDirectory = resultsPath;
+            measure.outputRelativePath = resultsPath+"/"+System.currentTimeMillis();
             measure.timeoutMin = timeoutMin;
             measure.userBenchmarkNames = benchmarkNames;
             measure.process();
@@ -88,12 +89,45 @@ public class RuntimeRegressionMasterApp {
             return;
         }
 
+        try {
+            // Find the initial set of exceptions and attempt to determine if they are false positives
+            Map<String, Double> currentResults = RuntimeRegressionUtils.loadJmhResults(outputDirectory);
+            Map<String, Double> baselineResults = RuntimeRegressionUtils.loadJmhResults(baselineDir);
+
+            Set<String> exceptions = RuntimeRegressionUtils.findRuntimeExceptions(
+                    baselineResults, currentResults, significantFractionTol);
+
+            RunExceptionsFindMinimum findMinimum = new RunExceptionsFindMinimum();
+            findMinimum.outputRelativePath = outputDirectory.getPath();
+            findMinimum.significantFractionTol = significantFractionTol;
+            for (String name : exceptions) {
+                findMinimum.addBenchmark(name, baselineResults.get(name));
+            }
+            findMinimum.process();
+
+            // Update the results with latest times and updated list of exceptions
+            for( String name : exceptions ) {
+                currentResults.put(name, findMinimum.getNameToResults().get(name));
+            }
+            exceptions.clear();
+            exceptions.addAll(findMinimum.getFailedNames());
+
+            // TODO save the summary to a file
+
+            createSummary(email, outputDirectory,
+                    currentResults, baselineResults, System.currentTimeMillis()-startTime);
+        } catch (IOException e) {
+            e.printStackTrace();
+            // TODO properly log this
+        }
+    }
+
+    private void createSummary(EmailResults email, File currentDirectory,
+                               Map<String, Double> current, Map<String, Double> baseline, long elapsedTime) {
         // Compare the benchmark results and summarize
         var summary = new RuntimeRegressionSummaryApp();
-        summary.processingTimeMS = System.currentTimeMillis()-time0;
-        summary.baselineDirectory = baselineDir.getPath();
-        summary.currentDirectory = outputDirectory.getPath();
-        summary.process();
+        summary.processingTimeMS = elapsedTime;
+        summary.process(current, baseline);
 
         // Log results
         String subject = String.format("EJML Runtime Regression: Flagged %3d Exceptions=%3d",
@@ -107,8 +141,8 @@ public class RuntimeRegressionMasterApp {
         }
 
         try {
-            System.out.println("Saving to "+new File(summary.currentDirectory, "summary.txt").getAbsolutePath());
-            var writer = new PrintWriter(new File(summary.currentDirectory, "summary.txt"));
+            System.out.println("Saving to "+new File(currentDirectory, "summary.txt").getAbsolutePath());
+            var writer = new PrintWriter(new File(currentDirectory, "summary.txt"));
             writer.println(text);
             writer.close();
         } catch (IOException e) {
