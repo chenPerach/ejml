@@ -120,6 +120,7 @@ public class RuntimeRegressionMasterApp {
         } catch (IOException e) {
             e.printStackTrace();
             // TODO properly log this
+            // TODO put JMH cvs files in their own directory
         }
     }
 
