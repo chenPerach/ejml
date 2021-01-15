@@ -112,7 +112,8 @@ public class RuntimeRegressionMasterApp {
             exceptions.clear();
             exceptions.addAll(findMinimum.getFailedNames());
 
-            // TODO save the summary to a file
+            // Save summary to a file
+            RuntimeRegressionUtils.saveAllResults(currentResults,new File(outputDirectory,"summary.txt").getPath());
 
             createSummary(email, outputDirectory,
                     currentResults, baselineResults, System.currentTimeMillis()-startTime);
@@ -125,7 +126,7 @@ public class RuntimeRegressionMasterApp {
     private void createSummary(EmailResults email, File currentDirectory,
                                Map<String, Double> current, Map<String, Double> baseline, long elapsedTime) {
         // Compare the benchmark results and summarize
-        var summary = new RuntimeRegressionSummaryApp();
+        var summary = new RuntimeRegressionSummary();
         summary.processingTimeMS = elapsedTime;
         summary.process(current, baseline);
 

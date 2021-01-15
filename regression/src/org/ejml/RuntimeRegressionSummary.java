@@ -21,6 +21,8 @@ package org.ejml;
 import lombok.Getter;
 import org.ejml.data.DGrowArray;
 
+import java.io.File;
+import java.io.IOException;
 import java.util.*;
 
 import static org.ejml.RuntimeRegressionMasterApp.formatDate;
@@ -30,7 +32,7 @@ import static org.ejml.RuntimeRegressionMasterApp.formatDate;
  *
  * @author Peter Abeles
  */
-public class RuntimeRegressionSummaryApp {
+public class RuntimeRegressionSummary {
     /** Input: How long it took to process in milliseconds */
     public double processingTimeMS = 0.0;
 
@@ -63,22 +65,42 @@ public class RuntimeRegressionSummaryApp {
         exceptions.clear();
         allErrors.reset();
 
+        // List of unique files found
+        Set<String> uniqueFiles = new HashSet<>();
+
         // If it's known they are identical later on we can skip a check
-        boolean identicalSets = baseline.size() == current.size();
+        boolean identical = baseline.size() == current.size();
 
         // Go through each benchmark and compare the results
-        for (String benchmarkName : baseline.keySet()) {
-            if (!current.containsKey(benchmarkName)) {
-                identicalSets = false;
-                exceptions.add("Not in current: " + benchmarkName);
+        for (String name : baseline.keySet()) {
+            if (!current.containsKey(name)) {
+                identical = false;
+                exceptions.add("Not in current: " + name);
                 continue;
             }
 
-            countFiles++;
-            compareBenchmark(benchmarkName);
-        }
+            double c = current.get(name);
+            double b = baseline.get(name);
 
-        if (identicalSets)
+            // Can't be negative or zero.
+            if (b <= 0.0 || c <= 0.0) {
+                exceptions.add("Impossible result: b=" + b + " c=" + c + " in " + name);
+                continue;
+            }
+
+            double fractionalError = Math.max(b/c - 1.0, c/b - 1.0);
+            allErrors.add(fractionalError);
+
+            if (fractionalError > significantFractionTol) {
+                flagged.add(String.format("%5.1f%% %s", 100.0*c/b, name));
+            }
+            String path = name.substring(0,name.lastIndexOf("."));
+            uniqueFiles.add(path);
+            countBenchmarks++;
+        }
+        countFiles = uniqueFiles.size();
+
+        if (identical)
             return;
 
         for (String benchmarkName : current.keySet()) {
@@ -137,44 +159,15 @@ public class RuntimeRegressionSummaryApp {
         return summary;
     }
 
-    /**
-     * Compares results and looks for significant differences to flag
-     */
-    private void compareBenchmark( String benchmarkName ) {
-        boolean identical = parseCurrent.results.size() == parseBaseline.results.size();
-        for (String name : parseBaseline.mapResults.keySet()) {
-            ParseBenchmarkCsv.Result baseline = parseBaseline.mapResults.get(name);
-            ParseBenchmarkCsv.Result current = parseCurrent.mapResults.get(name);
+    public static void main( String[] args ) throws IOException {
+        File pathCurrent = new File("runtime_regression/1610474495164");
+        File pathBaseline = new File("runtime_regression/baseline");
 
-            // Make sure it's in the current set too
-            if (current == null) {
-                identical = false;
-                continue;
-            }
+        Map<String, Double> current = RuntimeRegressionUtils.loadJmhResults(pathCurrent);
+        Map<String, Double> baseline = RuntimeRegressionUtils.loadJmhResults(pathBaseline);
 
-            double b = baseline.getMilliSecondsPerOp();
-            double c = current.getMilliSecondsPerOp();
-
-            // Can't be negative or zero.
-            if (b <= 0.0 || c <= 0.0) {
-                exceptions.add("Impossible result: b=" + b + " c=" + c + " in " + baseline.getKey());
-                continue;
-            }
-
-            double fractionalError = Math.max(b/c - 1.0, c/b - 1.0);
-            allErrors.add(fractionalError);
-
-            if (fractionalError > significantFractionTol) {
-                // clip all but the function from the benchmark name since it's already including the csv file
-                // which has the benchmark name
-                String[] packagePath = baseline.benchmark.split("\\.");
-                String functionName = packagePath[packagePath.length - 1];
-                flagged.add(String.format("%5.1f%% %s", 100.0*c/b, benchmarkName + ":" +
-                        functionName + ":" + baseline.getParametersString()));
-            }
-            countBenchmarks++;
-        }
-        if (!identical)
-            exceptions.add("Not identical: " + benchmarkName);
+        var app = new RuntimeRegressionSummary();
+        app.process(current, baseline);
+        System.out.println(app.createSummary());
     }
 }

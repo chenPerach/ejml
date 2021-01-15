@@ -21,6 +21,7 @@ package org.ejml;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -37,7 +38,7 @@ public class RuntimeRegressionUtils {
      */
     public static Map<String, Double> loadJmhResults( File directory ) throws IOException {
         Map<String, Double> results = new HashMap<>();
-        ParseBenchmarkCsv parser = new ParseBenchmarkCsv();
+        var parser = new ParseBenchmarkCsv();
 
         File[] children = directory.listFiles();
         if (children == null)
@@ -49,7 +50,11 @@ public class RuntimeRegressionUtils {
                 continue;
             parser.parse(new FileInputStream(f));
             for (ParseBenchmarkCsv.Result r : parser.results) {
-                results.put(r.benchmark, r.getMilliSecondsPerOp());
+                String parameters = "";
+                for (String p : r.parameters) {
+                    parameters += ":" + p;
+                }
+                results.put(r.benchmark + parameters, r.getMilliSecondsPerOp());
             }
         }
 
@@ -61,24 +66,38 @@ public class RuntimeRegressionUtils {
      *
      * @param tolerance fractional tolerance
      */
-    public static Set<String> findRuntimeExceptions( Map<String,Double> baseline,
-                                                     Map<String,Double> current,
-                                                     double tolerance )
-    {
+    public static Set<String> findRuntimeExceptions( Map<String, Double> baseline,
+                                                     Map<String, Double> current,
+                                                     double tolerance ) {
         Set<String> exceptions = new HashSet<>();
 
-        for( String name : baseline.keySet() ) {
+        for (String name : baseline.keySet()) {
             double valueBaseline = baseline.get(name);
             if (!current.containsKey(name))
                 continue;
             double valueCurrent = current.get(name);
 
-            if (valueCurrent/valueBaseline-1.0 <= tolerance)
+            if (valueCurrent/valueBaseline - 1.0 <= tolerance)
                 continue;
 
             exceptions.add(name);
         }
 
         return exceptions;
+    }
+
+    public static void saveAllResults( Map<String, Double> results, String path ) {
+        String text = "# Results Summary";
+        for (String key : results.keySet()) {
+            text += key +","+results.get(key) + "\n";
+        }
+        try {
+            System.out.println("Saving to " + path);
+            var writer = new PrintWriter(path);
+            writer.println(text);
+            writer.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 }
