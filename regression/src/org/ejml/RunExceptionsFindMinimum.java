@@ -50,17 +50,13 @@ public class RunExceptionsFindMinimum extends JmhRunnerBase {
 
     PrintStream logMinimum;
 
-    public RunExceptionsFindMinimum() {
-        logDirectory = "minimum";
-    }
-
     public void addBenchmark( String name, double targetTimeMS ) {
         benchmarks.add(new BenchmarkInfo(name,targetTimeMS));
     }
 
     @Override protected void performBenchmarks() throws IOException {
         // print to stdout and to a file
-        PrintStream logFileMinimum = new PrintStream(new File(outputDirectory, "log_minimum.txt"));
+        PrintStream logFileMinimum = new PrintStream(new File(outputDirectory, "minimum_search.txt"));
         OutputStream mirror = new MirrorStream(logFileMinimum, System.out);
         logMinimum = new PrintStream(mirror);
 

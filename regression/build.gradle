@@ -1,5 +1,23 @@
+dependencies {
+	compile project(':main:autocode')
+	compile project(':main:ejml-all')
+	compile project(':main:ejml-cdense').sourceSets.benchmarks.output
+	compile project(':main:ejml-ddense').sourceSets.benchmarks.output
+	compile project(':main:ejml-dsparse').sourceSets.benchmarks.output
+	compile project(':main:ejml-fdense').sourceSets.benchmarks.output
+	compile project(':main:ejml-fsparse').sourceSets.benchmarks.output
+	compile project(':main:ejml-zdense').sourceSets.benchmarks.output
+
+	['core','generator-annprocess'].each { String a->
+		compile('org.openjdk.jmh:jmh-'+a+':1.27')
+	}
+
+	compile group: 'args4j', name: 'args4j', version: '2.33'
+	compile 'com.sun.mail:javax.mail:1.6.0'
+}
+
 /*
- * Copyright (c) 2020, Peter Abeles. All Rights Reserved.
+ * Copyright (c) 2021, Peter Abeles. All Rights Reserved.
  *
  * This file is part of Efficient Java Matrix Library (EJML).
  *
@@ -16,55 +34,18 @@
  * limitations under the License.
  */
 
-dependencies {
-    compile project(':main:autocode')
-    compile project(':main:ejml-all')
-    compile project(':main:ejml-cdense').sourceSets.benchmarks.output
-    compile project(':main:ejml-ddense').sourceSets.benchmarks.output
-    compile project(':main:ejml-dsparse').sourceSets.benchmarks.output
-    compile project(':main:ejml-fdense').sourceSets.benchmarks.output
-    compile project(':main:ejml-fsparse').sourceSets.benchmarks.output
-    compile project(':main:ejml-zdense').sourceSets.benchmarks.output
-
-    ['core','generator-annprocess'].each { String a->
-        compile('org.openjdk.jmh:jmh-'+a+':1.27')
-    }
-
-    compile group: 'args4j', name: 'args4j', version: '2.33'
-    compile 'com.sun.mail:javax.mail:1.6.0'
-}
-
 // Run the regression using a gradle command
 // Currently this is the only way to get paths set up for benchmarks. See comment below.
 //
 // Example: ./gradlew runtimeRegression run --console=plain -Dexec.args="--SummaryOnly"
 task runtimeRegression(type: JavaExec) {
-    dependsOn build
-    group = "Execution"
-    description = "Run the mainClass from the output jar in classpath with ExecTask"
-    classpath = sourceSets.main.runtimeClasspath
-    main = "org.ejml.RuntimeRegressionMasterApp"
-    args System.getProperty("exec.args", "").split()
+	dependsOn build
+	group = "Execution"
+	description = "Run the mainClass from the output jar in classpath with ExecTask"
+	classpath = sourceSets.main.runtimeClasspath
+	main = "org.ejml.RuntimeRegressionMasterApp"
+	args System.getProperty("exec.args", "").split()
 }
 
 // Creating a jar would be easier to pass in arguments with, but it seems like only the first
 // META-INF/BenchmarkList it sees is used. This limited the benchmarks to one module
-//task runtimeRegressionJar(type: Jar, dependsOn: project.compileJava ) {
-//    manifest {
-//        attributes 'Implementation-Title': 'Runtime Regression Jar',
-//                'Implementation-Version': project.version,
-//                'Main-Class': 'org.ejml.RuntimeRegressionMasterApp'
-//    }
-//
-//    outputs.upToDateWhen { false }
-//
-//    from sourceSets.main.output
-//
-//    dependsOn configurations.runtimeClasspath
-//    from { configurations.runtimeClasspath.findAll{it.exists() }.collect {
-//        it.name.endsWith('jar') ? zipTree(it) : it } } {
-//        exclude 'META-INF/*.RSA', 'META-INF/*.SF', 'META-INF/*.DSA'
-//    }
-//
-//    doLast { archivePath.renameTo(file('../runtime_regression.jar')) }
-//}

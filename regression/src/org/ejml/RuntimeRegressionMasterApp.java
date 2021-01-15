@@ -23,9 +23,7 @@ import org.kohsuke.args4j.CmdLineParser;
 import org.kohsuke.args4j.Option;
 import org.kohsuke.args4j.spi.StringArrayOptionHandler;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.PrintWriter;
+import java.io.*;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.*;
@@ -37,8 +35,15 @@ import java.util.*;
  * @author Peter Abeles
  */
 public class RuntimeRegressionMasterApp {
+    // name of directory with JMH results
+    public static final String JMH_DIR = "jmh";
+
     @Option(name = "--SummaryOnly", usage = "If true it will only print out the summary from last time it ran")
     boolean doSummaryOnly = false;
+
+    @Option(name = "--MinimumOnly", usage =
+            "If true, it shouldn't compute main JMH results, but should re-run minimum finding")
+    boolean doMinimumOnly = false;
 
     @Option(name = "-e", aliases = {"--EmailPath"}, usage = "Path to email login. If relative, relative to project.")
     String emailPath = "email_login.txt";
@@ -56,6 +61,9 @@ public class RuntimeRegressionMasterApp {
     /** Tolerance used to decide if the difference in results are significant */
     public double significantFractionTol = 0.4;
 
+    // Log error messages
+    protected PrintStream logStderr;
+
     public void performRegression() {
         long startTime = System.currentTimeMillis();
         resultsPath = GenerateCode32.projectRelativePath(resultsPath);
@@ -63,65 +71,87 @@ public class RuntimeRegressionMasterApp {
         var email = new EmailResults();
         email.loadEmailFile(new File(emailPath));
 
-        File outputDirectory;
+        // Little bit of a hack, but if we want to just run the minimum search then this is the easiest way
+        // to do it
+        if (doMinimumOnly)
+            doSummaryOnly = true;
+
+        File currentResultsDir;
 
         if (doSummaryOnly) {
-            outputDirectory = selectMostRecentResults();
+            currentResultsDir = selectMostRecentResults();
         } else {
+            currentResultsDir = new File(resultsPath,System.currentTimeMillis()+"");
             var measure = new RunAllBenchmarksApp();
-            measure.outputRelativePath = resultsPath+"/"+System.currentTimeMillis();
+            measure.outputRelativePath = new File(currentResultsDir,JMH_DIR).getPath();
             measure.timeoutMin = timeoutMin;
             measure.userBenchmarkNames = benchmarkNames;
             measure.process();
-            outputDirectory = measure.outputDirectory;
         }
-        System.out.println("Current Results: " + outputDirectory.getPath());
-
-        File baselineDir = new File(resultsPath, "baseline");
-        if (!baselineDir.exists()) {
-            System.out.println("Baseline doesn't exist. Making current results the baseline");
-            if (!outputDirectory.renameTo(baselineDir)) {
-                System.err.println("Failed to rename current results to baseline");
-            }
-            if (email.emailDestination != null) {
-                email.send("EJML Runtime Regression: Initialized", "Created new baseline");
-            }
-            return;
-        }
+        System.out.println("Current Results: " + currentResultsDir.getPath());
+        File currentJmhDir = new File(currentResultsDir,"jmh");
 
         try {
+            logStderr = new PrintStream(new FileOutputStream(new File(currentResultsDir,"errors.txt")));
+
+            File baselineDir = new File(resultsPath, "baseline");
+            if (!baselineDir.exists()) {
+                System.out.println("Baseline doesn't exist. Making current results the baseline");
+                if (!currentResultsDir.renameTo(baselineDir)) {
+                    logStderr.println("Failed to rename current results to baseline");
+                }
+                if (email.emailDestination != null) {
+                    email.send("EJML Runtime Regression: Initialized", "Created new baseline");
+                }
+                return;
+            }
+
             // Find the initial set of exceptions and attempt to determine if they are false positives
-            Map<String, Double> currentResults = RuntimeRegressionUtils.loadJmhResults(outputDirectory);
-            Map<String, Double> baselineResults = RuntimeRegressionUtils.loadJmhResults(baselineDir);
+            Map<String, Double> currentResults = RuntimeRegressionUtils.loadJmhResults(currentJmhDir);
+            Map<String, Double> baselineResults = RuntimeRegressionUtils.loadJmhResults(new File(baselineDir,JMH_DIR));
 
-            Set<String> exceptions = RuntimeRegressionUtils.findRuntimeExceptions(
-                    baselineResults, currentResults, significantFractionTol);
-
-            RunExceptionsFindMinimum findMinimum = new RunExceptionsFindMinimum();
-            findMinimum.outputRelativePath = outputDirectory.getPath();
-            findMinimum.significantFractionTol = significantFractionTol;
-            for (String name : exceptions) {
-                findMinimum.addBenchmark(name, baselineResults.get(name));
+            if (doMinimumOnly || !doSummaryOnly) {
+                rerunFailedRegressionTests(currentResultsDir, currentResults, baselineResults);
             }
-            findMinimum.process();
 
-            // Update the results with latest times and updated list of exceptions
-            for( String name : exceptions ) {
-                currentResults.put(name, findMinimum.getNameToResults().get(name));
-            }
-            exceptions.clear();
-            exceptions.addAll(findMinimum.getFailedNames());
-
-            // Save summary to a file
-            RuntimeRegressionUtils.saveAllResults(currentResults,new File(outputDirectory,"summary.txt").getPath());
-
-            createSummary(email, outputDirectory,
-                    currentResults, baselineResults, System.currentTimeMillis()-startTime);
+            createSummary(email, currentResultsDir, currentResults, baselineResults,
+                    System.currentTimeMillis()-startTime);
         } catch (IOException e) {
-            e.printStackTrace();
-            // TODO properly log this
-            // TODO put JMH cvs files in their own directory
+            e.printStackTrace(logStderr);
+        } finally {
+            if (logStderr!=null)
+                logStderr.close();
         }
+
+        logStderr = null;
+    }
+
+    /**
+     * Re-reun regression tests to see if they are false positives
+     */
+    private void rerunFailedRegressionTests( File currentResultsDir,
+                                             Map<String, Double> currentResults,
+                                             Map<String, Double> baselineResults ) {
+        Set<String> exceptions = RuntimeRegressionUtils.findRuntimeExceptions(
+                baselineResults, currentResults, significantFractionTol);
+
+        var findMinimum = new RunExceptionsFindMinimum();
+        findMinimum.outputRelativePath = new File(currentResultsDir,"minimum").getPath();
+        findMinimum.significantFractionTol = significantFractionTol;
+        for (String name : exceptions) {
+            findMinimum.addBenchmark(name, baselineResults.get(name));
+        }
+        findMinimum.process();
+
+        // Update the results with latest times and updated list of exceptions
+        for (String name : exceptions) {
+            currentResults.put(name, findMinimum.getNameToResults().get(name));
+        }
+        exceptions.clear();
+        exceptions.addAll(findMinimum.getFailedNames());
+
+        // Save summary to a file
+        RuntimeRegressionUtils.saveAllResults(currentResults, new File(currentResultsDir, "summary.txt").getPath());
     }
 
     private void createSummary(EmailResults email, File currentDirectory,
@@ -148,7 +178,8 @@ public class RuntimeRegressionMasterApp {
             writer.println(text);
             writer.close();
         } catch (IOException e) {
-            e.printStackTrace();
+            e.printStackTrace(logStderr);
+            logStderr.flush();
         }
 
         System.out.println(text);

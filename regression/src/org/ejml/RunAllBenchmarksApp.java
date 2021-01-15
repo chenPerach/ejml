@@ -47,10 +47,6 @@ public class RunAllBenchmarksApp extends JmhRunnerBase {
 
     String[] blackListPackages = new String[]{"ejml-experimental"};
 
-    public RunAllBenchmarksApp() {
-        logDirectory = "run_all";
-    }
-
     @Override protected void performBenchmarks() throws IOException {
         String pathToMain = GenerateCode32.projectRelativePath("main");
         List<String> benchmarkNames = new ArrayList<>();
