@@ -55,6 +55,8 @@ public class RunExceptionsFindMinimum extends JmhRunnerBase {
     }
 
     @Override protected void performBenchmarks() throws IOException {
+        System.out.println("re-running benchmarks.size="+benchmarks.size());
+
         // print to stdout and to a file
         PrintStream logFileMinimum = new PrintStream(new File(outputDirectory, "minimum_search.txt"));
         OutputStream mirror = new MirrorStream(logFileMinimum, System.out);
@@ -87,11 +89,12 @@ public class RunExceptionsFindMinimum extends JmhRunnerBase {
         for (int iteration = 0; iteration < maxIterations; iteration++) {
             for (int i = benchmarks.size() - 1; i >= 0; i--) {
                 BenchmarkInfo info = benchmarks.get(i);
-                runBenchmark(info.path, true);
-                parseResults.parse(new FileInputStream(new File(outputDirectory, info.path + ".csv")));
-                if (parseResults.results.size() != 1)
-                    throw new RuntimeException("Expected only one result not " + parseResults.results.size());
-                double score = parseResults.results.get(0).getMilliSecondsPerOp();
+                // Everything after : are the parameters
+                String benchmarkName = info.path.split(":")[0];
+                runBenchmark(benchmarkName, true);
+                parseResults.parse(new FileInputStream(new File(outputDirectory, benchmarkName + ".csv")));
+                int matchingIndex = findResult(parseResults, info.path);
+                double score = parseResults.results.get(matchingIndex).getMilliSecondsPerOp();
 
                 // save the best score for later
                 info.bestFound = Math.min(score, info.bestFound);
@@ -109,6 +112,22 @@ public class RunExceptionsFindMinimum extends JmhRunnerBase {
                 }
             }
         }
+    }
+
+    /**
+     * A benchmark will match all the parameters. for the benchmark + parameters that match
+     */
+    private int findResult( ParseBenchmarkCsv parseResults, String benchmarkName ) {
+        int matchingIndex = -1;
+        for (int idx = 0; idx < parseResults.results.size(); idx++) {
+            ParseBenchmarkCsv.Result r = parseResults.results.get(idx);
+            if (r.getKey().equals(benchmarkName)) {
+                matchingIndex = idx;
+            }
+        }
+        if (matchingIndex == -1)
+            throw new RuntimeException("Could not find the result. results.size=" + parseResults.results.size());
+        return matchingIndex;
     }
 
     /**

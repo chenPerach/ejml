@@ -71,8 +71,8 @@ public abstract class JmhRunnerBase {
             System.out.println("Output Directory: " + outputDirectory.getAbsolutePath());
             try {
                 File logs = new File(outputDirectory, logDirectory);
-                if (!logs.mkdirs())
-                    throw new UncheckedIOException(new IOException("Failed to create log directory"));
+                if (!logs.exists() && !logs.mkdirs())
+                    throw new UncheckedIOException(new IOException("Failed to create log directory. "+logs.getPath()));
 
                 logExceptions = new PrintStream(new File(logs, "exceptions.txt"));
                 logRuntimes = new PrintStream(new File(logs, "runtime.txt"));
@@ -95,16 +95,16 @@ public abstract class JmhRunnerBase {
             int hours = (int)((totalTimeMS/(1000*60*60))%24);
             logRuntimes.printf("\nTotal Elapsed Time is %2d:%2d:%2d\n", hours, minutes, seconds);
             System.out.printf("\nTotal Elapsed Time is %2d:%2d:%2d\n", hours, minutes, seconds);
-        } catch (IOException e ) {
+        } catch (Exception e ) {
             e.printStackTrace(logStderr);
         } finally {
             // Stop mirroring stderr
             System.setErr(stderr);
 
             // Close all log files
-            logStderr.close();
-            logExceptions.close();
-            logRuntimes.close();
+            if (logStderr!=null) logStderr.close();
+            if (logExceptions!=null) logExceptions.close();
+            if (logRuntimes!=null) logRuntimes.close();
 
             System.out.println("Done!");
         }

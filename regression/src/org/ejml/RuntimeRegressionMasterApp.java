@@ -119,8 +119,7 @@ public class RuntimeRegressionMasterApp {
         } catch (IOException e) {
             e.printStackTrace(logStderr);
         } finally {
-            if (logStderr!=null)
-                logStderr.close();
+            if (logStderr!=null) logStderr.close();
         }
 
         logStderr = null;
